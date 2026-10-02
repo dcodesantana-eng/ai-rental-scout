@@ -43,7 +43,7 @@ flowchart TD
 
 The Google Sheets step matches records by `url_rastreamento`.
 
-The Gmail Trigger is configured to check for matching messages every minute. The deployed workflow runs on **n8n Cloud**, so it does not require a local computer or browser to remain open.
+The Gmail Trigger is configured to check for matching messages every minute when the workflow is active. The original workflow is published on **n8n Cloud**, so it does not require a local computer or browser to remain open.
 
 ## Technology Stack
 
@@ -79,7 +79,7 @@ The Gmail Trigger is configured to check for matching messages every minute. The
 | `url_rastreamento` | Tracking URL extracted from the alert |
 | `status` | Qualification status assigned by the workflow |
 
-The parser converts extracted price and room counts into numbers. Fields that cannot be extracted may be returned as `null`.
+The parser converts extracted prices and room counts into numbers. Fields that cannot be extracted may be returned as `null` or an empty string.
 
 ### Current Qualification Rules
 
@@ -94,6 +94,8 @@ preco <= 2000 AND quartos >= 2
 | `preco` | At most R$2,000 |
 | `quartos` | At least 2 bedrooms |
 
+The price limit is inclusive: a listing priced at exactly R$2,000 can pass.
+
 These criteria evaluate the advertised fields. They do not verify availability, listing legitimacy, or total occupancy costs such as condominium fees and taxes.
 
 ### Deduplication
@@ -105,25 +107,42 @@ The Google Sheets node uses **Append or Update Row**, configured to match on `ur
 
 This prevents duplicates when an identical tracking URL is processed again.
 
-**Boundary:** different tracking URLs may point to the same listing. The current implementation therefore provides deduplication by tracking URL, rather than guaranteed uniqueness by property. A canonical listing URL or stable listing ID would provide a stronger matching key.
+**Boundary:** different tracking URLs may point to the same listing. The current implementation provides deduplication by tracking URL, rather than guaranteed uniqueness by property. A canonical listing URL or stable listing ID would provide a stronger matching key.
 
 ## Validation and Current Status
 
-V2 was tested with alerts containing listings from:
+The original workflow was published on n8n Cloud as **V2 Final - Production** after temporary test nodes were removed.
 
-- **Florianópolis, Santa Catarina, Brazil**
-- **Imbituba, Santa Catarina, Brazil**
+The public JSON was subsequently imported from GitHub into a separate workflow named **AI Rental Scout | Import Validation**. Existing credentials were selected privately, and the Google Sheets destination was configured to use a separate validation spreadsheet.
 
-During development:
+### Manual Import and Functional Validation
 
-- One recorded execution extracted **6 listings**, with **5 passing** the configured criteria.
-- Reprocessing the same input did not increase the spreadsheet row count, validating deduplication for the tracking URLs used in that test.
-- Temporary test nodes were removed.
-- The final workflow was published on n8n Cloud as **V2 Final - Production**.
+The following checks were completed on **October 2, 2026**:
 
-The sanitized workflow export is included in this repository. Its JSON structure was validated, and the original node logic and connections were checked for preservation. Import into a separate n8n environment has not yet been tested.
+| Check | Observed result |
+| --- | --- |
+| Import the public JSON into a new workflow | All five nodes and their connections were present |
+| Configure Gmail and Google Sheets connections | Existing credentials could be selected and the test spreadsheet configured |
+| Fetch a matching Gmail message | One email was retrieved with the text field required by the parser |
+| Run the JavaScript parser | Six listing records were extracted |
+| Apply the qualification criteria | Five listings passed; the one-bedroom listing was excluded from the approved output |
+| Check the inclusive price boundary | Listings priced at exactly R$2,000 passed with two bedrooms |
+| Assign approval status | All five passing items received `status: aprovado` |
+| Write to an empty validation sheet | Five records were created, in rows 2–6 |
+| Repeat the write with the same input | The sheet remained at five records |
+| Verify an update to an existing row | A status manually changed to `teste` was restored to `aprovado` without adding a row |
 
-Long-term unattended reliability, parsing accuracy across different email formats, and quantified time savings have not yet been measured.
+The sample contained listings from **Florianópolis** and **Imbituba**, Santa Catarina, Brazil.
+
+The final check demonstrated that the node updated an existing record using the matching key, rather than merely avoiding an additional append.
+
+### Validation Boundaries
+
+These were manual checks performed by executing the imported workflow's nodes in sequence. They are not an automated test suite.
+
+The validation copy remained unpublished; its scheduled execution was not tested. Import into a different n8n installation or version has not been verified.
+
+This sample did not test rejection of a price above R$2,000, handling of missing required fields, or processing multiple emails in one execution. Long-term reliability, broader parsing accuracy, and quantified time savings have not yet been measured.
 
 ## Design Decisions
 
@@ -135,6 +154,7 @@ Long-term unattended reliability, parsing accuracy across different email format
 | Store results in Google Sheets | Provide a familiar interface for reviewing the shortlist |
 | Match records by tracking URL | Use an available identifier to handle repeated processing |
 | Keep the architecture small | Make the workflow easier to understand, maintain, and extend |
+| Validate in a separate workflow and sheet | Test the public export without writing to production records |
 
 ## Known Limitations
 
@@ -143,7 +163,7 @@ Long-term unattended reliability, parsing accuracy across different email format
 - **City-specific parsing:** the current location pattern explicitly recognizes Florianópolis and Imbituba. Supporting other cities requires adapting the parser.
 - **Tracking links:** the workflow stores tracking URLs rather than final listing URLs.
 - **Email-format dependency:** extraction relies on text markers and formatting in the alert. Template changes may affect results.
-- **First-input processing:** the Code node reads `$input.first()`. Processing multiple email items in one execution would require reviewing this behavior.
+- **First-input processing:** the Code node reads `$input.first()`. Processing multiple email items in one execution requires reviewing this behavior.
 - **Incomplete-record handling:** there is no dedicated validation or review path for missing prices, bedroom counts, or tracking keys.
 - **No separate rejection queue:** items that fail qualification stop at the validation step.
 
@@ -173,35 +193,39 @@ The public copy is **inactive** and requires your own connections and spreadshee
 
 ### Setup
 
-1. Download the JSON file and import it into a new n8n workflow.
-2. Configure your own Gmail and Google Sheets credentials.
-3. Review the Gmail Trigger filters for your OLX alerts.
-4. In the Google Sheets node, replace `YOUR_SPREADSHEET_ID` and `YOUR_SHEET_NAME` with your destination spreadsheet and sheet.
-5. Create these column headers in the sheet:
+1. Import the JSON into a new n8n workflow using **Import from File** or **Import from URL**.
+2. Give the imported workflow a distinct name.
+3. Select or configure your own Gmail and Google Sheets credentials.
+4. Review the Gmail Trigger filters for your OLX alerts.
+5. In the Google Sheets node, replace `YOUR_SPREADSHEET_ID` and `YOUR_SHEET_NAME` with your destination spreadsheet and sheet. Alternatively, switch both selectors to **From list** and select the destination.
+6. Create these nine column headers in the sheet:
 
    ```text
    titulo, bairro, cidade, preco, quartos, banheiros, tipo_imovel, url_rastreamento, status
    ```
 
-6. Confirm the field mappings and select **Append or Update Row**, matching on `url_rastreamento`.
-7. Verify both qualification rules: `preco <= 2000` AND `quartos >= 2`.
-8. Test in a separate sheet before publishing or activating the workflow.
-9. After enabling it, verify a subsequent automatic execution in n8n.
+7. Confirm the field mappings and select **Append or Update Row**, matching on `url_rastreamento`.
+8. Verify both qualification rules: `preco <= 2000` AND `quartos >= 2`.
+9. Test in a separate sheet before publishing or activating the workflow.
+10. After enabling it, verify a subsequent automatic execution in n8n.
 
 ### Suggested Verification
 
-The following checks are a manual verification plan, not an automated test suite:
+Use the following checks when adapting the workflow to your own environment:
 
-| Test input | Expected result |
+| Test input or action | Expected result |
 | --- | --- |
 | Price R$2,000; 2 bedrooms; unique tracking key | Approved and appended |
 | Price R$2,001; 2 bedrooms | Does not pass qualification |
 | Price R$1,900; 1 bedroom | Does not pass qualification |
 | Approved listing repeated with the same tracking key | Existing row updated; row count unchanged |
+| Manually change a stored status, then reprocess the same approved item | Status restored to `aprovado`; row count unchanged |
 | Same tracking key with a changed price that still meets the criteria | Existing row reflects the new price |
 | Missing price, bedroom count, or tracking key | Inspect actual behavior and define handling before unattended use |
 
-Use synthetic data for controlled tests and keep real email content and tracking URLs out of public files.
+This is a verification checklist, not a claim that every case above has already been tested. Completed checks are listed in the validation section.
+
+Use synthetic data for controlled edge-case tests. Keep real email content and tracking URLs out of public files.
 
 ## Future Improvements
 
@@ -211,6 +235,7 @@ Use synthetic data for controlled tests and keep real email content and tracking
 - Add explicit handling for missing or invalid prices, bedroom counts, and matching keys.
 - Support multiple email items in a single execution.
 - Create synthetic parsing fixtures and regression tests for different email formats.
+- Expand boundary and failure-case testing.
 - Add failure notifications and execution monitoring.
 - Introduce a review queue for incomplete records.
 - Measure processing volume, extraction completeness, duplicate frequency, and review time saved.
@@ -222,12 +247,15 @@ Use synthetic data for controlled tests and keep real email content and tracking
 - Connecting multiple services in an operational workflow.
 - Transforming email content into structured data.
 - Applying conditional processing and record updates.
-- Testing repeated-input behavior.
-- Preparing a workflow for public sharing.
+- Testing repeated-input behavior and updates to existing records.
+- Preparing and validating a workflow for public sharing.
+- Separating validation data from production records.
 - Documenting implementation boundaries and prioritizing improvements.
 
 ## Privacy
 
 The public workflow excludes credential references, private spreadsheet identifiers, instance metadata, and captured email data. It contains no live tracking URLs or personal email addresses.
 
-Authentication and private configuration must be supplied in the user's own n8n environment. Future examples and test fixtures should use synthetic data, and every updated export should be reviewed before publication.
+Authentication and private configuration must be supplied in the user's own n8n environment. Real email data used during validation is not included in this repository.
+
+Future examples and test fixtures should use synthetic data, and every updated export should be reviewed before publication.
