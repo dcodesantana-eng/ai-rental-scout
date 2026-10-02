@@ -1,0 +1,295 @@
+{
+  "name": "AI Rental Scout | V2",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f0f90422-881e-435b-baef-10ac24cef746",
+              "leftValue": "={{ $json.preco }}",
+              "rightValue": 2000,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            },
+            {
+              "id": "d41e7d32-6b54-4fc4-b740-3e14414e8d60",
+              "leftValue": "={{ $json.quartos }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ],
+      "id": "4dc23977-55e0-401f-b681-dea28f852d3c",
+      "name": "Validar Critérios"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "YOUR_SHEET_NAME",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "titulo": "={{ $json.titulo }}",
+            "bairro": "={{ $json.bairro }}",
+            "preco": "={{ $json.preco }}",
+            "quartos": "={{ $json.quartos }}",
+            "banheiros": "={{ $json.banheiros }}",
+            "tipo_imovel": "={{ $json.tipo_imovel }}",
+            "status": "={{ $json.status }}",
+            "url_rastreamento": "={{ $json.url_rastreamento }}",
+            "cidade": "={{ $json.cidade }}"
+          },
+          "matchingColumns": [
+            "url_rastreamento"
+          ],
+          "schema": [
+            {
+              "id": "titulo",
+              "displayName": "titulo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "bairro",
+              "displayName": "bairro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cidade",
+              "displayName": "cidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "preco",
+              "displayName": "preco",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "quartos",
+              "displayName": "quartos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "banheiros",
+              "displayName": "banheiros",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tipo_imovel",
+              "displayName": "tipo_imovel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "url_rastreamento",
+              "displayName": "url_rastreamento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        896,
+        -96
+      ],
+      "id": "e806550c-1137-41f0-a6fe-98fb6a634f39",
+      "name": "Salvar no Google Sheets"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "subject:\"Tem novos imóveis para sua busca\"",
+          "sender": "dicas@newsolx.com.br"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        448,
+        128
+      ],
+      "id": "7909d659-26fd-4415-b691-f11cf40c9edf",
+      "name": "Gmail Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const emailText = $input.first().json.text;\n\nconst partes = emailText.split(\"Ver agora\");\n\nconst anuncios = partes.filter(parte => parte.includes(\"Quartos:\"));\n\nreturn anuncios.map(parte => {\n  const quartos = parte.match(/Quartos:\\s*(\\d+)/);\n  const banheiros = parte.match(/Banheiros:\\s*(\\d+)/);\n  const preco = parte.match(/R\\$\\s*([\\d.]+,\\d{2})/);\n\n  // Aceita Florianópolis ou Imbituba\n  const localizacao = parte.match(\n    /\\n\\s*([^\\n]+),\\s*(Florianópolis|Imbituba)\\s*\\n\\s*\\n\\s*([^\\n]+)/\n  );\n\n  const bairro = localizacao ? localizacao[1].trim() : null;\n  const cidade = localizacao ? localizacao[2].trim() : null;\n  const titulo = localizacao ? localizacao[3].trim() : null;\n\n  let tipo_imovel = null;\n\n  if (titulo) {\n    const tituloMinusculo = titulo.toLowerCase();\n\n    if (tituloMinusculo.includes(\"apartamento\")) {\n      tipo_imovel = \"apartamento\";\n    } else if (tituloMinusculo.includes(\"casa\")) {\n      tipo_imovel = \"casa\";\n    }\n  }\n\n  const urls = parte.match(\n    /https:\\/\\/click\\.newsolx\\.com\\.br\\/\\?qs=[^\\]\\)\\s]+/g\n  );\n\n  const url_rastreamento = urls ? urls[urls.length - 1] : null;\n\n  return {\n    json: {\n      titulo,\n      bairro,\n      cidade,\n      quartos: quartos ? Number(quartos[1]) : null,\n      banheiros: banheiros ? Number(banheiros[1]) : null,\n      preco: preco\n        ? Number(preco[1].replace(/\\./g, \"\").replace(\",\", \".\"))\n        : null,\n      tipo_imovel,\n      url_rastreamento\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        128
+      ],
+      "id": "4b233d6a-b887-4b6b-93e8-4e3e853b294f",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4b52b12a-a2ac-435d-ba0a-4a07af72f890",
+              "name": "status",
+              "value": "aprovado",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        672,
+        -96
+      ],
+      "id": "eab0cd7c-4c36-4b8a-b50c-38fd5b0aa24e",
+      "name": "Marcar como Aprovado"
+    }
+  ],
+  "connections": {
+    "Validar Critérios": {
+      "main": [
+        [
+          {
+            "node": "Marcar como Aprovado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Validar Critérios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar como Aprovado": {
+      "main": [
+        [
+          {
+            "node": "Salvar no Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
