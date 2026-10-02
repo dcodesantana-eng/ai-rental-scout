@@ -37,13 +37,13 @@ flowchart TD
     C --> D[JavaScript parser]
     D --> E{Criteria validation}
     E -->|Pass| F[Approved status]
-    F --> G[Google Sheets]
+    F --> G[Google Sheets: Append or Update Row]
     E -->|Fail| H[End processing for this item]
 ```
 
-The Google Sheets step uses **Append or Update Row**, matching records by `url_rastreamento`.
+The Google Sheets step matches records by `url_rastreamento`.
 
-The Gmail Trigger periodically checks for matching messages. The workflow runs on **n8n Cloud**, so it does not require a local computer or browser to remain open.
+The Gmail Trigger is configured to check for matching messages every minute. The deployed workflow runs on **n8n Cloud**, so it does not require a local computer or browser to remain open.
 
 ## Technology Stack
 
@@ -59,11 +59,27 @@ The Gmail Trigger periodically checks for matching messages. The workflow runs o
 ## How It Works
 
 1. **Receive:** OLX sends a rental alert to Gmail.
-2. **Detect:** The Gmail Trigger identifies a message matching the configured filters.
-3. **Parse:** A JavaScript Code node extracts individual listings and structures the available property information.
+2. **Detect:** The Gmail Trigger identifies a message matching the configured sender and subject filters.
+3. **Parse:** A JavaScript Code node extracts individual listings from the email text and structures the available property information.
 4. **Validate:** Each listing is checked against the price and bedroom criteria.
-5. **Approve:** Listings that meet both conditions receive an approved status. Items that fail stop at validation.
+5. **Approve:** Listings that meet both conditions receive the status `aprovado`. Items that fail stop at validation.
 6. **Store:** Google Sheets appends a new row or updates an existing row using `url_rastreamento` as the matching key.
+
+### Extracted and Stored Fields
+
+| Field | Meaning |
+| --- | --- |
+| `titulo` | Listing title |
+| `bairro` | Neighborhood |
+| `cidade` | City |
+| `preco` | Advertised rental price in Brazilian reais |
+| `quartos` | Number of bedrooms |
+| `banheiros` | Number of bathrooms |
+| `tipo_imovel` | Property type inferred from the title |
+| `url_rastreamento` | Tracking URL extracted from the alert |
+| `status` | Qualification status assigned by the workflow |
+
+The parser converts extracted price and room counts into numbers. Fields that cannot be extracted may be returned as `null`.
 
 ### Current Qualification Rules
 
@@ -73,10 +89,10 @@ Both conditions must be true:
 preco <= 2000 AND quartos >= 2
 ```
 
-| Field | Meaning | Requirement |
-| --- | --- | --- |
-| `preco` | Advertised rental price in Brazilian reais | At most R$2,000 |
-| `quartos` | Number of bedrooms | At least 2 |
+| Field | Requirement |
+| --- | --- |
+| `preco` | At most R$2,000 |
+| `quartos` | At least 2 bedrooms |
 
 These criteria evaluate the advertised fields. They do not verify availability, listing legitimacy, or total occupancy costs such as condominium fees and taxes.
 
@@ -105,7 +121,9 @@ During development:
 - Temporary test nodes were removed.
 - The final workflow was published on n8n Cloud as **V2 Final - Production**.
 
-These checks demonstrate the tested workflow behavior. Long-term unattended reliability, parsing accuracy across all email formats, and quantified time savings have not yet been measured.
+The sanitized workflow export is included in this repository. Its JSON structure was validated, and the original node logic and connections were checked for preservation. Import into a separate n8n environment has not yet been tested.
+
+Long-term unattended reliability, parsing accuracy across different email formats, and quantified time savings have not yet been measured.
 
 ## Design Decisions
 
@@ -120,51 +138,78 @@ These checks demonstrate the tested workflow behavior. Long-term unattended reli
 
 ## Known Limitations
 
-- **Missing property type:** `tipo_imovel` is sometimes `null`.
-- **Incomplete neighborhood extraction:** the neighborhood is not extracted for some Imbituba listings.
+- **Missing property type:** `tipo_imovel` is sometimes `null`. The current logic recognizes “apartamento” or “casa” in the extracted title.
+- **Incomplete location extraction:** the neighborhood is not extracted for some Imbituba listings. Because neighborhood, city, and title depend on the same location pattern, a failed match can leave all three fields empty.
+- **City-specific parsing:** the current location pattern explicitly recognizes Florianópolis and Imbituba. Supporting other cities requires adapting the parser.
 - **Tracking links:** the workflow stores tracking URLs rather than final listing URLs.
-- **Email-format dependency:** changes to the alert template may affect extraction.
-- **Limited test coverage:** validation covered the two cities above, not every possible OLX email format.
-- **No separate review queue:** items that fail qualification stop at the validation step.
+- **Email-format dependency:** extraction relies on text markers and formatting in the alert. Template changes may affect results.
+- **First-input processing:** the Code node reads `$input.first()`. Processing multiple email items in one execution would require reviewing this behavior.
+- **Incomplete-record handling:** there is no dedicated validation or review path for missing prices, bedroom counts, or tracking keys.
+- **No separate rejection queue:** items that fail qualification stop at the validation step.
+
+## Repository Structure
+
+```text
+ai-rental-scout/
+├── README.md
+└── workflows/
+    └── ai-rental-scout-v2.json
+```
 
 ## Workflow Export and Setup
 
-The original n8n workflow export is **not included in this repository yet**. This repository currently documents the implementation; it does not yet provide an importable workflow.
+The sanitized V2 workflow is available in [workflows/ai-rental-scout-v2.json](workflows/ai-rental-scout-v2.json).
 
-The intended location for the reviewed export is:
+The export preserves the original five nodes, JavaScript parser, qualification rules, and connections. Credential references, private spreadsheet identifiers, and instance metadata have been removed.
 
-```text
-workflows/ai-rental-scout-v2.json
-```
+The public copy is **inactive** and requires your own connections and spreadsheet configuration.
 
-### Adding the Workflow Safely
+### Requirements
 
-1. Export the original V2 workflow from n8n and keep the raw export outside the repository.
-2. Create a separate copy for publication.
-3. Remove credential references, tokens, personal email addresses, spreadsheet identifiers, instance-specific metadata, and private configuration.
-4. Remove pinned data, captured email content, execution samples, real listing links, and tracking URLs. Inspect Code nodes, expressions, filters, and notes as well.
-5. Replace environment-specific values with clear placeholders while preserving the original parser, rules, and connections.
-6. Keep the public copy inactive and test its import in a separate workflow.
-7. Add the reviewed file at the path above and update this section with the tested n8n version and setup details.
-
-### Requirements for Reproduction
-
-Once the sanitized workflow is available, reproduction will require:
-
-- An n8n environment.
+- An n8n environment with support for the node versions used in the export.
 - Your own Gmail and Google Sheets connections.
 - OLX rental alerts delivered to your inbox.
-- A destination sheet with columns matching the workflow mappings.
-- `url_rastreamento` configured as the matching column.
-- Both qualification rules configured with **AND** logic.
+- A Google Sheets spreadsheet for storing results.
 
-Before enabling automatic execution, test an approved listing, a rejected listing, and a repeated matching key in a separate test sheet. Then verify a subsequent automatic execution.
+### Setup
+
+1. Download the JSON file and import it into a new n8n workflow.
+2. Configure your own Gmail and Google Sheets credentials.
+3. Review the Gmail Trigger filters for your OLX alerts.
+4. In the Google Sheets node, replace `YOUR_SPREADSHEET_ID` and `YOUR_SHEET_NAME` with your destination spreadsheet and sheet.
+5. Create these column headers in the sheet:
+
+   ```text
+   titulo, bairro, cidade, preco, quartos, banheiros, tipo_imovel, url_rastreamento, status
+   ```
+
+6. Confirm the field mappings and select **Append or Update Row**, matching on `url_rastreamento`.
+7. Verify both qualification rules: `preco <= 2000` AND `quartos >= 2`.
+8. Test in a separate sheet before publishing or activating the workflow.
+9. After enabling it, verify a subsequent automatic execution in n8n.
+
+### Suggested Verification
+
+The following checks are a manual verification plan, not an automated test suite:
+
+| Test input | Expected result |
+| --- | --- |
+| Price R$2,000; 2 bedrooms; unique tracking key | Approved and appended |
+| Price R$2,001; 2 bedrooms | Does not pass qualification |
+| Price R$1,900; 1 bedroom | Does not pass qualification |
+| Approved listing repeated with the same tracking key | Existing row updated; row count unchanged |
+| Same tracking key with a changed price that still meets the criteria | Existing row reflects the new price |
+| Missing price, bedroom count, or tracking key | Inspect actual behavior and define handling before unattended use |
+
+Use synthetic data for controlled tests and keep real email content and tracking URLs out of public files.
 
 ## Future Improvements
 
 - Improve property-type and neighborhood extraction.
+- Support additional cities without hardcoding each city in the location pattern.
 - Resolve canonical listing URLs or stable listing IDs.
 - Add explicit handling for missing or invalid prices, bedroom counts, and matching keys.
+- Support multiple email items in a single execution.
 - Create synthetic parsing fixtures and regression tests for different email formats.
 - Add failure notifications and execution monitoring.
 - Introduce a review queue for incomplete records.
@@ -178,10 +223,11 @@ Before enabling automatic execution, test an approved listing, a rejected listin
 - Transforming email content into structured data.
 - Applying conditional processing and record updates.
 - Testing repeated-input behavior.
+- Preparing a workflow for public sharing.
 - Documenting implementation boundaries and prioritizing improvements.
 
 ## Privacy
 
-Public project files must not contain credentials, tokens, personal email addresses, real email content, spreadsheet identifiers, or live tracking URLs.
+The public workflow excludes credential references, private spreadsheet identifiers, instance metadata, and captured email data. It contains no live tracking URLs or personal email addresses.
 
-Examples and test fixtures should use synthetic data. Authentication and private configuration belong in the user's own n8n environment.
+Authentication and private configuration must be supplied in the user's own n8n environment. Future examples and test fixtures should use synthetic data, and every updated export should be reviewed before publication.
